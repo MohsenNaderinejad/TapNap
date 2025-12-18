@@ -52,11 +52,11 @@ Determines the shortest path for a vehicle with finite fuel capacity $C_{max}$ a
 **Description**:
 Minimizes travel time in a network where node traversal latency is a function of arrival time (due to red/green light cycles $t_{on}$, $t_{off}$).
 
-- **Approach**: Modified Dijkstra's Algorithm where the cost to traverse edge (u, v) is $w_{uv} + wait\_time(t_{arrival})$.
+- **Approach**: Modified Dijkstra's Algorithm where the cost to traverse edge $(u, v)$ is $w_{uv} + wait\_time(t_{arrival})$.
 
 - **Mathematical Model**:
 
-$$\text{wait\_time}(t) = \max(0, (t \pmod{T_{cycle}}) - t_{on})$$
+$$\text{wait time}(t) = \max(0, (t \pmod{T_{cycle}}) - t_{on})$$
 
 Where $T_{cycle} = t_{on} + t_{off}$.
 

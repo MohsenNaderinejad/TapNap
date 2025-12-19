@@ -40,11 +40,9 @@ Calculates the maximum vehicle height allowance between any two nodes in the net
 
 **Problem Space**: Shortest Path on State-Space Graphs
 **Description**:
-Determines the shortest path for a vehicle with finite fuel capacity $C_{max}$ and initial fuel $C_{cur}$. The route must account for fuel consumption proportional to distance and refuel availability at specific nodes.
+Determines the shortest path for a vehicle with finite fuel capacity $C_{max}$ and initial fuel $C_{cur}$. The route must account for fuel consumption proportional to distance and refuel availability at specific nodes at most once.
 
-- **Approach**: Modeling the state as $(u, fuel)$, effectively expanding the graph nodes to $N * C_{max}$.
-
-- **Optimization**: Pruning states where $fuel < 0$ to minimize search space.
+- **Approach**: Calculate shortest path from start to every gas station, then from the end to every gas station, then find the minimum cost path that visits a gas station.
 
 ### 3. Temporal Routing (Traffic Signals)
 
@@ -68,21 +66,19 @@ Finds the optimal path that minimizes time (considering traffic lights) while en
 
 - **Approach**:
 
-1. Compute shortest paths from Source $(S)$ to all nodes: $d_S[i]$.
+1. Make an state space representation with hack index $city\_number \times 10 + fueled\_or\_not$ where $fueled\_or\_not$ is a binary indicator $(0\ or\ 1)$ representing whether the vehicle is fueled or not.
 
-2. Compute shortest paths from all nodes to Destination $(T)$ on the transpose graph: $d_T[i]$.
+2. Dijkstra's algorithm is run on this state space to compute the shortest paths.
 
-3. Iterate over the set of Fuel Stations $F$ to find the minimum total cost:
-
-$$\min_{k \in F} (d_S[k] + d_T[k])$$
+3. The final result is the distance to the destination node in the state space with fueled state of 1.
 
 ### 5. Market Analytics Engine
 
 **Problem Space**: Online Statistical Queries
-Description:
+**Description**:
 A module for real-time analysis of competitor pricing. Supports inserting new price points and querying the rank of a specific price (number of offers $<= P$) in $O(log N)$ time.
 
-- **Approach**: Implementation of a Balanced Binary Search Tree (BST) or Fenwick Tree with Coordinate Compression to handle values up to $10^9$.
+- **Approach**: Implementation of a Balanced Binary Search Tree (BST) or AVL to handle values up to $10^9$.
 
 ## 🛠️ Build & Run
 
@@ -90,17 +86,9 @@ Instructions for building the project will be added here. (e.g., standard CMake 
 
 ```
 Example build command:
-g++ -std=c++17 -O2 main.cpp -o implementation
-./implementation < input.txt
+g++ -std=c++17 problem_name.cpp -o implementation
+./implementation < input.txt > output.out
 ```
 
 
-## 📝 Future Improvements
-
-- Implement A* heuristics for faster average-case routing on Euclidean datasets.
-
-- Parallelize the "Multi-Objective Waypoint" search using OpenMP.
-
-- Visualizer for the MST and Shortest Path output.
-
-Author: Mohsen Naderinejad
+### Author: Mohsen Naderinejad

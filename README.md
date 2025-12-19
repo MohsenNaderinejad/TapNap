@@ -8,6 +8,12 @@ This repository hosts the core algorithmic engine for **TapNap**, a fictional jo
 
 The codebase demonstrates solutions to NP-hard and polynomial-time optimization problems found in real-world navigation systems, focusing on **time complexity reduction** and **memory efficiency**.
 
+In each folder of the repository, you'll find:
+
+- **Documentation**: Detailed explanation of the problem and module.
+- **Source Code**: The implementation of the algorithms and data structures.
+- **Tests**: Unit tests and integration tests to ensure code correctness.
+
 ## 🚀 Key Technical Highlights
 
 - **Graph Theory**: Implementation of Maximum Spanning Trees (MST) and Dijkstra's algorithm modified for state-space search.

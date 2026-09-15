@@ -1,100 +1,169 @@
-# TapNap Logistics Engine 🚚💨
+# TS-System
 
-### High-Performance Algorithmic Core for Freight Transport Optimization
+A terminal exam platform written in C++17. Teachers build exams out of three question types, publish them, grade the written answers and export scoreboards; students enrol, sit the exam under a time limit, and get a report card with their score, their rank and the class average.
 
-## 📖 Project Overview
+About 4,800 lines across 28 files, split into headers and translation units and built with a Makefile. Persistence is JSON on disk, reports are CSV. The only third-party code is `nlohmann/json`, vendored in `include/`.
 
-This repository hosts the core algorithmic engine for **TapNap**, a fictional joint venture between ride-sharing giants entering the freight and heavy transport market. The project simulates a backend system responsible for optimizing logistics across a complex, constraint-heavy road network.
+---
 
-The codebase demonstrates solutions to NP-hard and polynomial-time optimization problems found in real-world navigation systems, focusing on **time complexity reduction** and **memory efficiency**.
+## Contents
 
-In each folder of the repository, you'll find:
+- [Building](#building)
+- [Running](#running)
+- [Data model](#data-model)
+- [Question types and scoring](#question-types-and-scoring)
+- [Exam lifecycle](#exam-lifecycle)
+- [Ranking](#ranking)
+- [Persistence and reports](#persistence-and-reports)
+- [Project layout](#project-layout)
+- [Known limitations](#known-limitations)
 
-- **Documentation**: Detailed explanation of the problem and module.
-- **Source Code**: The implementation of the algorithms and data structures.
-- **Tests**: Unit tests and integration tests to ensure code correctness.
+---
 
-## 🚀 Key Technical Highlights
+## Building
 
-- **Graph Theory**: Implementation of Maximum Spanning Trees (MST) and Dijkstra's algorithm modified for state-space search.
+Requires a C++17 compiler.
 
-- **Dynamic Queries**: Handling online updates to graph topology using Disjoint Set Union (DSU) and Lowest Common Ancestor (LCA) techniques.
-
-- **Temporal Routing**: Modeling time-dependent edge weights to account for traffic light cycles.
-
-- **Data Structures**: Utilization of Order Statistic Trees (or Coordinate Compressed Fenwick Trees) for $O(\log N)$ statistical queries on pricing data.
-
-🧩 Module Breakdown
-
-The project is divided into five distinct computational modules, each addressing a specific logistical constraint.
-
-### 1. Network Capacity Analysis ("The Core")
-
-**Problem Space**: Dynamic Connectivity & Bottleneck Paths
-**Description**:
-Calculates the maximum vehicle height allowance between any two nodes in the network. The system handles dynamic updates (trucks entering/leaving the fleet) and static road height constraints.
-
-- **Approach**: We treat the road network as a weighted graph where weights represent height limits. The problem is reduced to finding the bottleneck edge on the path between $u$ and $v$ in a Maximum Spanning Tree.
-
-- **Complexity**:
-
-  - Preprocessing: $O(M \log M)$ (Kruskal's Algorithm)
-
-  - Query Processing: $O(\log N)$ via Binary Lifting (LCA).
-
-### 2. Fuel-Constrained Routing
-
-**Problem Space**: Shortest Path on State-Space Graphs
-**Description**:
-Determines the shortest path for a vehicle with finite fuel capacity $C_{max}$ and initial fuel $C_{cur}$. The route must account for fuel consumption proportional to distance and refuel availability at specific nodes at most once.
-
-- **Approach**: Calculate shortest path from start to every gas station, then from the end to every gas station, then find the minimum cost path that visits a gas station.
-
-### 3. Temporal Routing (Traffic Signals)
-
-**Problem Space**: Time-Dependent Shortest Path
-**Description**:
-Minimizes travel time in a network where node traversal latency is a function of arrival time (due to red/green light cycles $t_{on}$, $t_{off}$).
-
-- **Approach**: Modified Dijkstra's Algorithm where the cost to traverse edge $(u, v)$ is $w_{uv} + wait\_time(t_{arrival})$.
-
-- **Mathematical Model**:
-
-$$\text{wait time}(t) = \max(0, (t \pmod{T_{cycle}}) - t_{on})$$
-
-Where $T_{cycle} = t_{on} + t_{off}$.
-
-### 4. Multi-Objective Waypoint Routing
-
-**Problem Space**: Pathfinding with Mandatory Stops
-**Description**:
-Finds the optimal path that minimizes time (considering traffic lights) while ensuring the vehicle visits at least one refueling station.
-
-- **Approach**:
-
-1. Make an state space representation with hack index $city\_number \times 10 + fueled\_or\_not$ where $fueled\_or\_not$ is a binary indicator $(0\ or\ 1)$ representing whether the vehicle is fueled or not.
-
-2. Dijkstra's algorithm is run on this state space to compute the shortest paths.
-
-3. The final result is the distance to the destination node in the state space with fueled state of 1.
-
-### 5. Market Analytics Engine
-
-**Problem Space**: Online Statistical Queries
-**Description**:
-A module for real-time analysis of competitor pricing. Supports inserting new price points and querying the rank of a specific price (number of offers $<= P$) in $O(log N)$ time.
-
-- **Approach**: Implementation of a Balanced Binary Search Tree (BST) or AVL to handle values up to $10^9$.
-
-## 🛠️ Build & Run
-
-Instructions for building the project will be added here. (e.g., standard CMake or Makefile instructions).
-
-```
-Example build command:
-g++ -std=c++17 problem_name.cpp -o implementation
-./implementation < input.txt > output.out
+```bash
+make
 ```
 
+Or directly:
 
-### Author: Mohsen Naderinejad
+```bash
+g++ -std=c++17 -Iinclude \
+    src/*.cpp exam/*.cpp user/*.cpp user/teacher/*.cpp user/student/*.cpp \
+    -o TS-APP
+```
+
+Run from the project root, because the JSON store and the report directories are resolved relative to the working directory.
+
+```bash
+./TS-APP
+```
+
+---
+
+## Running
+
+The program opens on a menu offering login and signup. From there the interface branches by role.
+
+A teacher can create exams, add and edit questions, publish an exam so students can see it, grade the written answers, and print a scoreboard. A student can enrol in published exams, sit them inside the time window, and print a report card once grading is done.
+
+Email format is validated with a regular expression at signup, and identifiers are checked for collisions against the existing store before an account is created.
+
+---
+
+## Data model
+
+```
+User  (abstract)
+ |-- Teacher
+ |-- Student
+
+Question  (abstract)
+ |-- multipleChoiceQuestion
+ |-- ShortFormQuestion
+ |-- FullFormQuestion
+
+Exam
+ |-- ExamScoreBoard   (friend of Exam)
+```
+
+`User` holds the shared fields and declares `login` pure virtual, so each role authenticates against its own JSON store. `Question` declares `setQuesionBasedStudentScore`, `questionPrint` and `clearAnswer` pure virtual; every question type decides for itself how a score is derived and how it is rendered in teacher mode versus student mode.
+
+---
+
+## Question types and scoring
+
+Each question carries a correct score and a wrong score, so wrong answers can carry a penalty rather than just zero, and the penalty can differ per question.
+
+Answer state is an explicit enum rather than a sentinel value:
+
+```cpp
+enum QuestionStatus {
+    NOT_ANSWERD              = -2,
+    ANSWERED                 = -1,
+    ANSWERED_INCORRECTLY     =  0,
+    ANSWERED_CORRECTLY       =  1,
+    TEACHER_CALCULATED_SCORE =  2
+};
+```
+
+The separation matters: a multiple-choice question moves itself to `ANSWERED_CORRECTLY` or `ANSWERED_INCORRECTLY` without a teacher, while a written answer sits at `ANSWERED` until a teacher grades it and it becomes `TEACHER_CALCULATED_SCORE`. Nothing can be reported until every question in the exam has left the pending states.
+
+Multiple-choice questions have no limit on the number of options, and they are shuffled per student. The shuffle keeps a `shuffledToOriginalMap` so the answer a student picked can be mapped back to the original option when the question is graded or reprinted. Shuffling without that map would make the stored answer meaningless.
+
+---
+
+## Exam lifecycle
+
+```
+created (teacher)  ->  published  ->  student enrols  ->  student sits it (timed)
+      ->  teacher grades written answers  ->  report cards released
+```
+
+An exam has a time limit, and a student's attempt is closed when the limit expires. Only published exams appear to students. A teacher can delete an exam or individual questions, and can edit question text and scores while the exam is still being built.
+
+---
+
+## Ranking
+
+Scoreboards are kept in an ordered set of `StudentScore*` with a custom comparator. The ordering is total rather than partial: higher score first, then student ID, then name. Two students on the same score get a deterministic order instead of an arbitrary one, which means a scoreboard printed twice is identical both times.
+
+```cpp
+struct studentScoreComparator {
+    bool operator()(const StudentScore* a, const StudentScore* b) const {
+        if (a->Score != b->Score) return a->Score > b->Score;
+        if (a->SDK->ID != b->SDK->ID) return a->SDK->ID < b->SDK->ID;
+        return a->SDK->Name < b->SDK->Name;
+    }
+};
+```
+
+`ExamScoreBoard` is declared a friend of `Exam` so it can read the score map directly without exposing it publicly.
+
+---
+
+## Persistence and reports
+
+State lives in `data/`:
+
+```
+data/MAIN_DATAS/teachers.json      teacher accounts
+data/MAIN_DATAS/students.json      student accounts
+data/MAIN_DATAS/exams.json         exams, enrolments, scores
+data/EXAM_QUESTIONS/questions.json question bank
+```
+
+Reports are written under `reports/` as CSV. A student gets a general report plus one file per question type; a teacher gets a per-exam scoreboard. The output directory can be chosen at print time and is created if it does not exist.
+
+---
+
+## Project layout
+
+```
+include/        headers, plus vendored json.hpp
+src/            entry point, global helpers, and one file per interface page
+                (main menu, login, signup, teacher main, teacher exam,
+                 student main, student exam)
+exam/           Exam.cpp, Question.cpp
+user/           User.cpp
+user/teacher/   Teacher.cpp
+user/student/   Student.cpp
+data/           JSON store
+reports/        generated CSV output
+Makefile
+```
+
+Interface code sits in `src/` and never manipulates JSON directly; the domain classes own their own serialization. Adding a question type means adding a subclass of `Question` and touching the page that renders it, not rewriting the exam logic.
+
+---
+
+## Known limitations
+
+- **Passwords are stored in plain text** in the JSON files. This was a first-year exercise in class design, not in security, and it should not hold real accounts.
+- **Single process, single user at a time.** There is no locking around the JSON files, so two copies of the program running against the same `data/` directory will lose writes.
+- **`StudentScore` manages raw `new` and `delete`.** It works, but the ownership would be clearer with a value type or a smart pointer.
+- **Path handling differs between Windows and Unix.** `backup_main/main_unix.cpp` exists because file paths were hard-coded differently for each platform. Using `std::filesystem` would remove the need for two mains.
+- The repository currently contains built `.exe` files and a zipped copy of itself. Those are build artefacts and should not be tracked.

@@ -1,169 +1,127 @@
-# TS-System
+# TapNap
 
-A terminal exam platform written in C++17. Teachers build exams out of three question types, publish them, grade the written answers and export scoreboards; students enrol, sit the exam under a time limit, and get a report card with their score, their rank and the class average.
+Five routing and analytics problems set on a freight network, each solved in C++ with attention to the complexity bound rather than to whether it runs at all. The framing is a fictional haulage company; the content is graph algorithms, state-space search and a balanced tree written from scratch.
 
-About 4,800 lines across 28 files, split into headers and translation units and built with a Makefile. Persistence is JSON on disk, reports are CSV. The only third-party code is `nlohmann/json`, vendored in `include/`.
+Every module is a standalone program reading from stdin. Each ships with the problem statement, a sample input and the corresponding output.
 
 ---
 
 ## Contents
 
-- [Building](#building)
-- [Running](#running)
-- [Data model](#data-model)
-- [Question types and scoring](#question-types-and-scoring)
-- [Exam lifecycle](#exam-lifecycle)
-- [Ranking](#ranking)
-- [Persistence and reports](#persistence-and-reports)
-- [Project layout](#project-layout)
-- [Known limitations](#known-limitations)
+- [Building and running](#building-and-running)
+- [Module I: bottleneck queries on a dynamic fleet](#module-i-bottleneck-queries-on-a-dynamic-fleet)
+- [Module II: routing with one refuel](#module-ii-routing-with-one-refuel)
+- [Module III: routing through traffic signals](#module-iii-routing-through-traffic-signals)
+- [Module IV: both constraints at once](#module-iv-both-constraints-at-once)
+- [Module V: order statistics on truck prices](#module-v-order-statistics-on-truck-prices)
+- [Layout](#layout)
+- [Known issues](#known-issues)
 
 ---
 
-## Building
+## Building and running
 
-Requires a C++17 compiler.
+Each module is one translation unit with no dependencies beyond the standard library.
 
 ```bash
-make
+g++ -std=c++17 -O2 module-1-core/the_core.cpp -o the_core
+./the_core < module-1-core/input.in
 ```
 
-Or directly:
+Compare against the `output.out` sitting next to each input.
 
-```bash
-g++ -std=c++17 -Iinclude \
-    src/*.cpp exam/*.cpp user/*.cpp user/teacher/*.cpp user/student/*.cpp \
-    -o TS-APP
-```
-
-Run from the project root, because the JSON store and the report directories are resolved relative to the working directory.
-
-```bash
-./TS-APP
-```
+GCC is required. The sources include `<bits/stdc++.h>`, which Clang and MSVC do not ship.
 
 ---
 
-## Running
+## Module I: bottleneck queries on a dynamic fleet
 
-The program opens on a menu offering login and signup. From there the interface branches by role.
+**Problem.** Roads have height limits. Trucks have heights. The fleet changes over time as vehicles are added and retired. Given two intersections, report the tallest truck currently in the fleet that can get from one to the other.
 
-A teacher can create exams, add and edit questions, publish an exam so students can see it, grade the written answers, and print a scoreboard. A student can enrol in published exams, sit them inside the time window, and print a report card once grading is done.
+**Approach.** The tallest truck that can traverse a path is limited by the lowest bridge on it, so the useful quantity between two nodes is the maximum over all paths of the minimum edge weight. That value is the bottleneck, and it is found on the maximum spanning tree: the path between two nodes in a maximum spanning tree has the best possible minimum edge, so the whole graph collapses to a tree without losing any answer.
 
-Email format is validated with a regular expression at signup, and identifiers are checked for collisions against the existing store before an account is created.
+Kruskal builds the maximum spanning tree, sorting edges descending and unioning with a disjoint set that does both path compression and union by rank. A DFS then roots the tree and fills the first column of two lifting tables, one holding ancestors and one holding the minimum edge weight on the way to them. Binary lifting fills the rest, so the minimum along any ancestor chain is available in logarithmic time. An LCA walk over both tables returns the bottleneck between any pair.
 
----
+Disconnected graphs are handled by rooting every component at a shared virtual node, so the query does not need a separate connectivity check beyond comparing DSU representatives.
 
-## Data model
+The fleet itself is a `multiset` of heights. Answering a query means finding the largest element not exceeding the bottleneck, which is `upper_bound` followed by a step back.
 
-```
-User  (abstract)
- |-- Teacher
- |-- Student
-
-Question  (abstract)
- |-- multipleChoiceQuestion
- |-- ShortFormQuestion
- |-- FullFormQuestion
-
-Exam
- |-- ExamScoreBoard   (friend of Exam)
-```
-
-`User` holds the shared fields and declares `login` pure virtual, so each role authenticates against its own JSON store. `Question` declares `setQuesionBasedStudentScore`, `questionPrint` and `clearAnswer` pure virtual; every question type decides for itself how a score is derived and how it is rendered in teacher mode versus student mode.
+**Complexity.** O(M log M) to build, O(log N) per query, O(log N) per fleet update.
 
 ---
 
-## Question types and scoring
+## Module II: routing with one refuel
 
-Each question carries a correct score and a wrong score, so wrong answers can carry a penalty rather than just zero, and the penalty can differ per question.
+**Problem.** A truck starts with a given amount of fuel and has a tank capacity. Fuel burns in proportion to distance. It may stop at a fuel station at most once. Find the shortest route.
 
-Answer state is an explicit enum rather than a sentinel value:
+**Approach.** The single refuel splits any valid route into two independent legs: start to station, station to destination. So two runs of Dijkstra suffice, one from the origin and one from the destination, and the answer is the cheapest station where the first leg fits inside the fuel currently in the tank and the second fits inside a full tank. The direct route is checked separately as the no-refuel case.
 
-```cpp
-enum QuestionStatus {
-    NOT_ANSWERD              = -2,
-    ANSWERED                 = -1,
-    ANSWERED_INCORRECTLY     =  0,
-    ANSWERED_CORRECTLY       =  1,
-    TEACHER_CALCULATED_SCORE =  2
-};
-```
+The point is that no search over combinations is needed. Two shortest-path trees answer every candidate at once, and the constraint becomes a filter over stations rather than part of the search.
 
-The separation matters: a multiple-choice question moves itself to `ANSWERED_CORRECTLY` or `ANSWERED_INCORRECTLY` without a teacher, while a written answer sits at `ANSWERED` until a teacher grades it and it becomes `TEACHER_CALCULATED_SCORE`. Nothing can be reported until every question in the exam has left the pending states.
+**Complexity.** O((N + M) log N), dominated by the two Dijkstra runs.
 
-Multiple-choice questions have no limit on the number of options, and they are shuffled per student. The shuffle keeps a `shuffledToOriginalMap` so the answer a student picked can be mapped back to the original option when the question is graded or reprinted. Shuffling without that map would make the stored answer meaningless.
+**Note.** Unreachable inputs print `nemisarfed`, Persian for "not worth it". That is what the judge expected, and it is preserved.
 
 ---
 
-## Exam lifecycle
+## Module III: routing through traffic signals
 
-```
-created (teacher)  ->  published  ->  student enrols  ->  student sits it (timed)
-      ->  teacher grades written answers  ->  report cards released
-```
+**Problem.** Every intersection has a traffic light with a green phase and a red phase. Arriving during red means waiting for the next green. Minimise total travel time.
 
-An exam has a time limit, and a student's attempt is closed when the limit expires. Only published exams appear to students. A teacher can delete an exam or individual questions, and can edit question text and scores while the exam is still being built.
+**Approach.** Edge cost is no longer fixed; it depends on when you arrive. With a cycle length of green plus red, arriving at time t means waiting zero if t modulo the cycle falls inside the green window, and otherwise waiting out the remainder of the cycle. That waiting term is folded directly into the relaxation step.
 
----
+Dijkstra still works here, and the reason is worth stating. A time-dependent shortest path problem is only safe for Dijkstra when waiting cannot help you arrive earlier, meaning departure time and arrival time move in the same direction. Traffic lights satisfy that: leaving later never gets you through sooner. Without that property the greedy argument collapses and Dijkstra stops being correct, which is why the same trick does not transfer to networks with, say, scheduled departures.
 
-## Ranking
-
-Scoreboards are kept in an ordered set of `StudentScore*` with a custom comparator. The ordering is total rather than partial: higher score first, then student ID, then name. Two students on the same score get a deterministic order instead of an arbitrary one, which means a scoreboard printed twice is identical both times.
-
-```cpp
-struct studentScoreComparator {
-    bool operator()(const StudentScore* a, const StudentScore* b) const {
-        if (a->Score != b->Score) return a->Score > b->Score;
-        if (a->SDK->ID != b->SDK->ID) return a->SDK->ID < b->SDK->ID;
-        return a->SDK->Name < b->SDK->Name;
-    }
-};
-```
-
-`ExamScoreBoard` is declared a friend of `Exam` so it can read the score map directly without exposing it publicly.
+**Complexity.** O((N + M) log N).
 
 ---
 
-## Persistence and reports
+## Module IV: both constraints at once
 
-State lives in `data/`:
+**Problem.** Module II and Module III together. Traffic lights everywhere, and one permitted refuel.
 
-```
-data/MAIN_DATAS/teachers.json      teacher accounts
-data/MAIN_DATAS/students.json      student accounts
-data/MAIN_DATAS/exams.json         exams, enrolments, scores
-data/EXAM_QUESTIONS/questions.json question bank
-```
+**Approach.** Layer the graph. Every city becomes two states: one before the refuel has been used, one after. Road edges connect states within the same layer, and each fuel station gets a zero-cost edge from its lower state to its upper one. The single permitted refuel becomes a single permitted layer transition, enforced by the graph's shape rather than by extra logic in the search.
 
-Reports are written under `reports/` as CSV. A student gets a general report plus one file per question type; a teacher gets a per-exam scoreboard. The output directory can be chosen at print time and is created if it does not exist.
+Dijkstra then runs unmodified over the layered graph, with the traffic light delay applied exactly as in Module III. Start in the lower layer at the origin, read the answer from the upper layer at the destination.
 
----
+This is the general move for constraints of the form "you may do X at most k times": push the counter into the node identity and let an unmodified shortest-path algorithm handle it.
 
-## Project layout
-
-```
-include/        headers, plus vendored json.hpp
-src/            entry point, global helpers, and one file per interface page
-                (main menu, login, signup, teacher main, teacher exam,
-                 student main, student exam)
-exam/           Exam.cpp, Question.cpp
-user/           User.cpp
-user/teacher/   Teacher.cpp
-user/student/   Student.cpp
-data/           JSON store
-reports/        generated CSV output
-Makefile
-```
-
-Interface code sits in `src/` and never manipulates JSON directly; the domain classes own their own serialization. Adding a question type means adding a subclass of `Question` and touching the page that renders it, not rewriting the exam logic.
+**Complexity.** O((kN + kM) log(kN)) for k layers, which is two here.
 
 ---
 
-## Known limitations
+## Module V: order statistics on truck prices
 
-- **Passwords are stored in plain text** in the JSON files. This was a first-year exercise in class design, not in security, and it should not hold real accounts.
-- **Single process, single user at a time.** There is no locking around the JSON files, so two copies of the program running against the same `data/` directory will lose writes.
-- **`StudentScore` manages raw `new` and `delete`.** It works, but the ownership would be clearer with a value type or a smart pointer.
-- **Path handling differs between Windows and Unix.** `backup_main/main_unix.cpp` exists because file paths were hard-coded differently for each platform. Using `std::filesystem` would remove the need for two mains.
-- The repository currently contains built `.exe` files and a zipped copy of itself. Those are build artefacts and should not be tracked.
+**Problem.** Prices arrive one at a time. At any point, report how many trucks cost no more than a given amount.
+
+**Approach.** An AVL tree, written from scratch, with each node carrying its subtree size alongside its height. Height keeps the tree balanced through the usual four rotation cases; size turns it into an order statistic tree, so a count query descends once and sums subtree sizes as it goes rather than walking the matching elements.
+
+Counting is O(log N) rather than O(k) in the number of matches, which is the entire reason for augmenting the tree instead of using a sorted container.
+
+**Complexity.** O(log N) insert, O(log N) query.
+
+---
+
+## Layout
+
+```
+module-1-core/                       maximum spanning tree, DSU, binary lifting, LCA
+module-2-fuel-routing/               two-source Dijkstra with a refuel constraint
+module-3-temporal-routing/           Dijkstra with time-dependent node delays
+module-4-waypoint-routing/           layered state-space graph
+module-5-market-analytics/           size-augmented AVL tree
+```
+
+Each directory holds the source, the problem statement as a PDF, `input.in` and `output.out`.
+
+---
+
+## Known issues
+
+- **`<bits/stdc++.h>` is a GCC extension.** Every module includes it, so nothing here builds under Clang or MSVC without editing the includes.
+- **The DFS in Module I is recursive** and the node bound is 200,007. A deep enough tree will overflow the stack before the algorithm is at fault.
+- **Module I flushes on every query.** `endl` inside the query loop forces a flush per line; `'\n'` would be faster on large inputs.
+- **Module IV multiplies node indices by ten to build two layers.** Two would do. The array bounds are sized for it and it works, but it wastes memory and makes the indexing harder to read than `2 * u` and `2 * u + 1`.
+- **`rebalanceTree` in Module V has no final return statement.** Every reachable path does return, but the compiler cannot prove it, and falling off the end of a non-void function is undefined behaviour rather than a warning to ignore.
+- **The AVL tree supports insertion only.** Deletion was never needed by the problem and was never written.
+- **Compiled `.exe` files are committed.** They are build artefacts and the `.gitignore` does not exclude them.
